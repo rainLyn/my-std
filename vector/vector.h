@@ -19,7 +19,7 @@ public:
     m_capacity = origin.m_capacity;
 
     try {
-      for (size_t i = 0; i < origin.m_size; i++) {
+      for (std::size_t i = 0; i < origin.m_size; i++) {
         // 直接在指定位置new
         new (&m_data[i]) T(origin.m_data[i]);
         m_size++;
@@ -106,7 +106,7 @@ public:
   // 将vector内的数据清除
   void clear() {
     // 依次调用析构函数
-    for (size_t i = 0; i < m_size; i++)
+    for (std::size_t i = 0; i < m_size; i++)
       m_data[i].~T();
 
     m_size = 0;
@@ -127,151 +127,44 @@ public:
 
   // 在末尾追加元素并返回追加元素的地址
   template <typename... ArgsT> T &emplace_back(ArgsT &&...args) {
-    if (m_size < m_capacity) {
-      std::size_t newDataPtr = m_size;
-      new (&m_data[newDataPtr]) T(std::forward<ArgsT>(args)...);
-      m_size++;
-      return m_data[newDataPtr];
-    }
+    ensure_capacity(m_size + 1);
 
-    // 如果分配内存不足先扩容2倍
-    std::size_t newCapacity = (1 + m_size) * 2;
-    auto newData = static_cast<T *>(operator new(newCapacity * sizeof(T)));
+    std::size_t newDataPtr = m_size;
 
-    m_capacity = newCapacity;
-    std::size_t newSize = 0;
+    new (&m_data[newDataPtr]) T(std::forward<ArgsT>(args)...);
+    m_size++;
 
-    try {
-      // 逐一从原本data中move
-      for (size_t i = 0; i < m_size; i++) {
-        new (&newData[i]) T(std::move(m_data[i]));
-        newSize++;
-      }
-
-      new (&newData[newSize]) T(std::forward<ArgsT>(args)...);
-      newSize++;
-    } catch (...) {
-      release_memory(newData, newSize);
-      throw;
-    }
-
-    release_memory(m_data, m_size);
-
-    m_data = newData;
-    m_size = newSize;
-    m_capacity = newCapacity;
-
-    return m_data[m_size];
+    return m_data[newDataPtr];
   }
 
-  T &operator[](size_t index) { return m_data[index]; }
+  T &operator[](std::size_t index) { return m_data[index]; }
 
-  T &at(size_t index) {
-    try {
-      return m_data[index];
-    } catch (const std::exception &e) {
-      std::cerr << e.what() << '\n';
+  T &at(std::size_t index) {
+    if (index >= m_size) {
+      throw std::out_of_range("Index out of range");
     }
+    return m_data[index];
   }
 
   bool empty() { return m_size == 0; }
 
-  void insert(size_t index, const T &insertData) {
-    if (m_size + 1 < m_capacity) {
-      for (int i = m_size + 1; i > index; i--) {
-        new (&m_data[i]) T(std::move(m_data[i - 1]));
-        m_data[i - 1].~T();
-      }
+  template <typename insertT>
+  void insert(std::size_t index, const insertT &&insertData) {
+    ensure_capacity(m_size + 1);
 
-      new (&m_data[index]) T(std::move(insertData));
-
-      m_size++;
-      return;
+    for (int i = m_size + 1; i > index; i--) {
+      new (&m_data[i]) T(std::move(m_data[i - 1]));
+      m_data[i - 1].~T();
     }
 
-    // 如果分配内存不足先扩容2倍
-    std::size_t newCapacity = m_size * 2;
-    auto newData = static_cast<T *>(operator new(newCapacity * sizeof(T)));
+    new (&m_data[index]) T(std::move(insertData));
 
-    m_capacity = newCapacity;
-    std::size_t newSize = 0;
-
-    try {
-      // 逐一从原本data中move
-      for (size_t i = 0; i < index; i++) {
-        new (&newData[i]) T(std::move(m_data[i]));
-        newSize++;
-      }
-
-      for (int i = m_size + 1; i > index; i--) {
-        new (&newData[i]) T(std::move(m_data[i - 1]));
-        newSize++;
-      }
-
-      new (&newData[index]) T(std::move(insertData));
-      newSize++;
-    } catch (...) {
-      release_memory(newData, newSize);
-      throw;
-    }
-
-    release_memory(m_data, m_size);
-
-    m_data = newData;
-    m_size = newSize;
-    m_capacity = newCapacity;
-
-    return;
-  }
-  void insert(size_t index, const T &&insertData) {
-    if (m_size + 1 < m_capacity) {
-      for (int i = m_size + 1; i > index; i--) {
-        new (&m_data[i]) T(std::move(m_data[i - 1]));
-        m_data[i - 1].~T();
-      }
-
-      new (&m_data[index]) T(std::move(insertData));
-
-      m_size++;
-      return;
-    }
-
-    // 如果分配内存不足先扩容2倍
-    std::size_t newCapacity = m_size * 2;
-    auto newData = static_cast<T *>(operator new(newCapacity * sizeof(T)));
-
-    m_capacity = newCapacity;
-    std::size_t newSize = 0;
-
-    try {
-      // 逐一从原本data中move
-      for (size_t i = 0; i < index; i++) {
-        new (&newData[i]) T(std::move(m_data[i]));
-        newSize++;
-      }
-
-      for (int i = m_size + 1; i > index; i--) {
-        new (&newData[i]) T(std::move(m_data[i - 1]));
-        newSize++;
-      }
-
-      new (&newData[index]) T(std::move(insertData));
-      newSize++;
-    } catch (...) {
-      release_memory(newData, newSize);
-      throw;
-    }
-
-    release_memory(m_data, m_size);
-
-    m_data = newData;
-    m_size = newSize;
-    m_capacity = newCapacity;
+    m_size++;
 
     return;
   }
 
-  void erase(size_t index) {
+  void erase(std::size_t index) {
     if (index >= m_size)
       return;
 
@@ -290,9 +183,38 @@ private:
 
   template <typename ReleaseT>
   void release_memory(ReleaseT *data, std::size_t size) {
-    for (size_t i = 0; i < size; i++)
+    for (std::size_t i = 0; i < size; i++)
       data[i].~ReleaseT();
     operator delete(data);
+  }
+
+  void ensure_capacity(std::size_t needCapacity) {
+    if (needCapacity <= m_capacity)
+      return;
+
+    std::size_t newCapacity = m_size == 0 ? 1 : m_size * 2;
+    reallocate(newCapacity);
+  }
+
+  void reallocate(std::size_t newCapacity) {
+    auto newData = static_cast<T *>(operator new(newCapacity * sizeof(T)));
+    std::size_t newSize = 0;
+    try {
+      // 逐一从原本data中move
+      for (std::size_t i = 0; i < m_size; i++) {
+        new (&newData[i]) T(std::move(m_data[i]));
+        newSize++;
+      }
+    } catch (...) {
+      release_memory(newData, newSize);
+      throw;
+    }
+
+    release_memory(m_data, m_size);
+
+    m_data = newData;
+    m_size = newSize;
+    m_capacity = newCapacity;
   }
 };
 
