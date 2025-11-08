@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <iostream>
 #include <utility>
 #include <valarray>
 
@@ -20,7 +21,7 @@ public:
     try {
       for (size_t i = 0; i < origin.m_size; i++) {
         // 直接在指定位置new
-        new (m_data[i]) T(origin.m_data[i]);
+        new (&m_data[i]) T(origin.m_data[i]);
         m_size++;
       }
     } catch (...) {
@@ -56,11 +57,39 @@ public:
 
   // 返回vector开头的地址
   T *begin() { return m_data; }
-  const T *begin() const { return m_data; }
+  const T *cbegin() const { return m_data; }
 
   // 返回最后一个元素后方的地址
   T *end() { return m_data + m_size; }
-  const T *end() const { return m_data + m_size; }
+  const T *cend() const { return m_data + m_size; }
+
+  // 返回第一个元素
+  T *front() {
+    if (m_size > 0)
+      return &m_data[0];
+    else
+      return nullptr;
+  }
+  const T *front() const {
+    if (m_size > 0)
+      return &m_data[0];
+    else
+      return nullptr;
+  }
+
+  // 返回最后一个元素
+  T *back() {
+    if (m_size > 0)
+      return &m_data[m_size - 1];
+    else
+      return nullptr;
+  }
+  const T *back() const {
+    if (m_size > 0)
+      return &m_data[m_size - 1];
+    else
+      return nullptr;
+  }
 
   // 返回第一个元素
   T *data() { return m_data; }
@@ -106,7 +135,7 @@ public:
     }
 
     // 如果分配内存不足先扩容2倍
-    std::size_t newCapacity = m_size * 2;
+    std::size_t newCapacity = (1 + m_size) * 2;
     auto newData = static_cast<T *>(operator new(newCapacity * sizeof(T)));
 
     m_capacity = newCapacity;
@@ -135,11 +164,123 @@ public:
     return m_data[m_size];
   }
 
-  T &operator[](size_t index) {
-    if (index < m_size)
+  T &operator[](size_t index) { return m_data[index]; }
+
+  T &at(size_t index) {
+    try {
       return m_data[index];
-    else
-      return m_data[0];
+    } catch (const std::exception &e) {
+      std::cerr << e.what() << '\n';
+    }
+  }
+
+  bool empty() { return m_size == 0; }
+
+  void insert(size_t index, const T &insertData) {
+    if (m_size + 1 < m_capacity) {
+      for (int i = m_size + 1; i > index; i--) {
+        new (&m_data[i]) T(std::move(m_data[i - 1]));
+        m_data[i - 1].~T();
+      }
+
+      new (&m_data[index]) T(std::move(insertData));
+
+      m_size++;
+      return;
+    }
+
+    // 如果分配内存不足先扩容2倍
+    std::size_t newCapacity = m_size * 2;
+    auto newData = static_cast<T *>(operator new(newCapacity * sizeof(T)));
+
+    m_capacity = newCapacity;
+    std::size_t newSize = 0;
+
+    try {
+      // 逐一从原本data中move
+      for (size_t i = 0; i < index; i++) {
+        new (&newData[i]) T(std::move(m_data[i]));
+        newSize++;
+      }
+
+      for (int i = m_size + 1; i > index; i--) {
+        new (&newData[i]) T(std::move(m_data[i - 1]));
+        newSize++;
+      }
+
+      new (&newData[index]) T(std::move(insertData));
+      newSize++;
+    } catch (...) {
+      release_memory(newData, newSize);
+      throw;
+    }
+
+    release_memory(m_data, m_size);
+
+    m_data = newData;
+    m_size = newSize;
+    m_capacity = newCapacity;
+
+    return;
+  }
+  void insert(size_t index, const T &&insertData) {
+    if (m_size + 1 < m_capacity) {
+      for (int i = m_size + 1; i > index; i--) {
+        new (&m_data[i]) T(std::move(m_data[i - 1]));
+        m_data[i - 1].~T();
+      }
+
+      new (&m_data[index]) T(std::move(insertData));
+
+      m_size++;
+      return;
+    }
+
+    // 如果分配内存不足先扩容2倍
+    std::size_t newCapacity = m_size * 2;
+    auto newData = static_cast<T *>(operator new(newCapacity * sizeof(T)));
+
+    m_capacity = newCapacity;
+    std::size_t newSize = 0;
+
+    try {
+      // 逐一从原本data中move
+      for (size_t i = 0; i < index; i++) {
+        new (&newData[i]) T(std::move(m_data[i]));
+        newSize++;
+      }
+
+      for (int i = m_size + 1; i > index; i--) {
+        new (&newData[i]) T(std::move(m_data[i - 1]));
+        newSize++;
+      }
+
+      new (&newData[index]) T(std::move(insertData));
+      newSize++;
+    } catch (...) {
+      release_memory(newData, newSize);
+      throw;
+    }
+
+    release_memory(m_data, m_size);
+
+    m_data = newData;
+    m_size = newSize;
+    m_capacity = newCapacity;
+
+    return;
+  }
+
+  void erase(size_t index) {
+    if (index >= m_size)
+      return;
+
+    for (int i = index + 1; i < m_size; i++) {
+      m_data[i - 1].~T();
+      new (&m_data[i - 1]) T(std::forward<T>(m_data[i]));
+    }
+
+    pop_back();
   }
 
 private:
